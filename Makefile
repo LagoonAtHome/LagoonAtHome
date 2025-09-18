@@ -24,7 +24,7 @@ basic: core-dependencies lagoon-core lagoon-remote lagoon-config
 
 all: core-dependencies extras lagoon-core lagoon-remote lagoon-config
 
-core-dependencies: k3s sysctl helm-repos metallb cert-manager ingress registry minio
+core-dependencies: k3s sysctl helm-repos metallb cert-manager gatekeeper ingress registry minio
 
 extras: homelab prometheus postgres 
 
@@ -62,6 +62,7 @@ helm-repos: helm
 	helm repo add appuio https://charts.appuio.ch
 	helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
 	helm repo add headlamp https://kubernetes-sigs.github.io/headlamp/
+	helm repo add gatekeeper https://open-policy-agent.github.io/gatekeeper/charts
 	helm repo update
 
 metallb:
@@ -85,7 +86,7 @@ cert-manager:
 		--create-namespace \
 		--namespace cert-manager \
 		--wait \
-		--set installCRDs=true \
+		--set crds.enabled=true \
 		--set ingressShim.defaultIssuerName=$(CLUSTER_ISSUER) \
 		--set ingressShim.defaultIssuerKind=ClusterIssuer \
 		--set ingressShim.defaultIssuerGroup=cert-manager.io \
@@ -94,6 +95,31 @@ cert-manager:
 	kubectl apply -f config/lagoon-issuer-letsencrypt.yml
 	kubectl apply -f config/lagoon-issuer-letsencrypt-staging.yml
 	kubectl apply -f config/lagoon-issuer-selfsigned.yml
+	helm upgrade \
+		--install \
+		--create-namespace \
+		--namespace cert-manager \
+		--wait \
+		--version=v0.19.0  \
+		--set crds.enabled=true \
+		--set secretTargets.enabled=true \
+		--set secretTargets.authorizedSecretsAll=true \
+		trust-manager \
+		jetstack/trust-manager
+	kubectl create -f config/ca-bundle.yml
+
+.PHONY: gatekeeper
+gatekeeper:
+	helm upgrade \
+		--install \
+		--create-namespace \
+		--namespace gatekeeper-system \
+		--wait \
+		--version=v3.11.0 \
+		--set replicas=1 \
+		gatekeeper \
+		gatekeeper/gatekeeper
+	kubectl create -f config/ca-volume.yml
 
 ingress:
 	@echo "Installing Ingress Nginx"
@@ -328,7 +354,6 @@ lagoon-remote:
                 --set lagoon-build-deploy.lagoonTokenHost=lagoon-core-token.lagoon-core.svc \
                 --set lagoon-build-deploy.lagoonTokenPort=2223 \
                 --set lagoon-build-deploy.lagoonAPIHost=http://lagoon-core-api.lagoon-core.svc:80 \
-		--set lagoon-build-deploy.extraArgs[0]="--skip-tls-verify=true" \
                 --set lagoon-build-deploy.harbor.enabled=false \
 		--set lagoon-build-deploy.unauthenticatedRegistry=registry.$$($(KUBECTL) -n ingress-nginx get services ingress-nginx-controller -o jsonpath='{.status.loadBalancer.ingress[0].ip}').nip.io \
 		lagoon-remote \
