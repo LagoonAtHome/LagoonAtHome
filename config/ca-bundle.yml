@@ -6,7 +6,7 @@ spec:
   sources:
   - useDefaultCAs: true
   - secret:
-      name: lagoon-local-secret
+      name: lagoon-secret
       key: "ca.crt"
   target:
     configMap:

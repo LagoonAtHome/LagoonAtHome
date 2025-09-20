@@ -9,7 +9,7 @@ KUBECTL=kubectl
 
 BASE_URL=192.168.1.150.nip.io
 LAGOON_NETWORK_RANGE="192.168.1.150-192.168.1.160"
-CLUSTER_ISSUER=selfsigned-issuer
+CLUSTER_ISSUER=lagoon-issuer
 
 MINIO_USERNAME=admin
 MINIO_PASSWORD=password
@@ -106,7 +106,7 @@ cert-manager:
 		--set secretTargets.authorizedSecretsAll=true \
 		trust-manager \
 		jetstack/trust-manager
-	kubectl create -f config/ca-bundle.yml
+	kubectl apply -f config/ca-bundle.yml
 
 .PHONY: gatekeeper
 gatekeeper:
@@ -119,7 +119,7 @@ gatekeeper:
 		--set replicas=1 \
 		gatekeeper \
 		gatekeeper/gatekeeper
-	kubectl create -f config/ca-volume.yml
+	kubectl apply -f config/ca-volume.yml
 
 ingress:
 	@echo "Installing Ingress Nginx"
@@ -215,10 +215,14 @@ minio:
 		--set consoleIngress.hosts[0].host="minio.$(BASE_URL)" \
 		--set consoleIngress.hosts[0].paths[0].path="/" \
 		--set consoleIngress.hosts[0].paths[0].pathType=Prefix \
+		--set consoleIngress.tls[0].hosts[0]=minio.$(BASE_URL) \
+                --set consoleIngress.tls[0].secretName=minio-console-tls \
 		--set ingress.enabled=true \
 		--set ingress.hosts[0].host=minio-api.$(BASE_URL) \
 		--set ingress.hosts[0].paths[0].path="/" \
 		--set ingress.hosts[0].paths[0].pathType=Prefix \
+		--set ingress.tls[0].hosts[0]=minio-api.$(BASE_URL) \
+                --set ingress.tls[0].secretName=minio-api-tls \
 		--set-string ingress.annotations."cert-manager\.io/cluster-issuer"=$(CLUSTER_ISSUER) \
 		--set-string consoleIngress.annotations."cert-manager\.io/cluster-issuer"=$(CLUSTER_ISSUER) \
 		minio \
@@ -260,6 +264,8 @@ lagoon-core:
 	    --install \
 	    --create-namespace \
 	    --namespace lagoon-core \
+	    --wait \
+	    --timeout 10m \
 	    --set lagoonSeedUsername="$(SEED_USERNAME)" \
             --set lagoonSeedPassword=$(SEED_PASSWORD) \
             --set lagoonSeedOrganization=$(SEED_ORG) \
@@ -273,7 +279,7 @@ lagoon-core:
             --set s3FilesAccessKeyID=admin \
             --set s3FilesSecretAccessKey=password \
             --set s3FilesBucket=lagoon-files \
-            --set s3FilesHost="https://minioapi.$(BASE_URL)" \
+            --set s3FilesHost="https://minio-api.$(BASE_URL)" \
 	    --set elasticsearchURL="not-real-but-necessary.example.com" \
 	    --set kibanaURL="not-real-but-necessary.example.com" \
 	    --set keycloak.serviceMonitor.enabled=false \
