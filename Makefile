@@ -4,8 +4,8 @@ SHELL := /bin/bash
 .SHELLFLAGS := -eu -o pipefail -c
 .DEFAULT_GOAL := all
 
-KUBECONFIG=$(HOME)/.kube/config
-KUBECTL=kubectl
+export KUBECONFIG := $(HOME)/.kube/config
+KUBECTL := kubectl
 
 BASE_URL=192.168.1.150.nip.io
 LAGOON_NETWORK_RANGE="192.168.1.150-192.168.1.160"
@@ -32,7 +32,7 @@ extras: homelab prometheus postgres
 k3s:
 	@echo "Installing k3s"
 	export BASE_URL=$(BASE_URL)
-	curl -sfL https://get.k3s.io | INSTALL_K3S_EXEC="server --disable=traefik --disable=servicelb" sh -
+	curl -sfL https://get.k3s.io | INSTALL_K3S_EXEC="server --disable=traefik --disable=servicelb --write-kubeconfig-mode 644" sh -
 	sudo mkdir -p $(dir $(KUBECONFIG))
 	sudo cp /etc/rancher/k3s/k3s.yaml $(KUBECONFIG)
 	sudo chmod 644 $(KUBECONFIG)
@@ -92,6 +92,13 @@ cert-manager:
 		--set ingressShim.defaultIssuerGroup=cert-manager.io \
 		cert-manager \
 		jetstack/cert-manager
+	@mkdir -p certs
+	openssl x509 -enddate -noout -in certs/rootCA.pem > /dev/null 2>&1 || \
+	(openssl genrsa -out certs/rootCA-key.pem 2048 && \
+	openssl req -x509 -new -nodes -key certs/rootCA-key.pem \
+		-sha256 -days 3560 -out certs/rootCA.pem -addext keyUsage=critical,digitalSignature,keyEncipherment,keyCertSign \
+		-subj '/CN=lagoon.test')
+	kubectl -n cert-manager create secret generic lagoon-secret --from-file=tls.crt=certs/rootCA.pem --from-file=tls.key=certs/rootCA-key.pem --from-file=ca.crt=certs/rootCA.pem
 	kubectl apply -f config/lagoon-issuer-letsencrypt.yml
 	kubectl apply -f config/lagoon-issuer-letsencrypt-staging.yml
 	kubectl apply -f config/lagoon-issuer-selfsigned.yml
@@ -513,4 +520,5 @@ post-install:
 nuke:
 	@echo "Nuking EVERYTHING"
 	bash /usr/local/bin/k3s-uninstall.sh
+	sudo rm -rf $(KUBECONFIG)
 
