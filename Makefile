@@ -221,9 +221,6 @@ minio:
 		--set ingress.hosts[0].host=minio-api.$(BASE_URL) \
 		--set ingress.hosts[0].paths[0].path="/" \
 		--set ingress.hosts[0].paths[0].pathType=Prefix \
-		--set ingress.tls[0].hosts[0]=minio-api.$(BASE_URL) \
-                --set ingress.tls[0].secretName=minio-api-tls \
-		--set-string ingress.annotations."cert-manager\.io/cluster-issuer"=$(CLUSTER_ISSUER) \
 		--set-string consoleIngress.annotations."cert-manager\.io/cluster-issuer"=$(CLUSTER_ISSUER) \
 		minio \
 		oci://registry-1.docker.io/cloudpirates/minio
@@ -279,7 +276,7 @@ lagoon-core:
             --set s3FilesAccessKeyID=admin \
             --set s3FilesSecretAccessKey=password \
             --set s3FilesBucket=lagoon-files \
-            --set s3FilesHost="https://minio-api.$(BASE_URL)" \
+            --set s3FilesHost="http://minio-api.$(BASE_URL)" \
 	    --set elasticsearchURL="not-real-but-necessary.example.com" \
 	    --set kibanaURL="not-real-but-necessary.example.com" \
 	    --set keycloak.serviceMonitor.enabled=false \
