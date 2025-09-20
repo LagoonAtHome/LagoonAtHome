@@ -495,6 +495,19 @@ post-install:
 	  echo "Linking deploytarget to organization"
 	  lagoon add organization-deploytarget -O cozone -D "$$DEPLOYTARGET_ID"
 	fi
+	# Create test project
+	if lagoon get project -p test --output-json | jq -e --arg projectname "test" '.data[] | select(.projectname==$$projectname)'; then
+		echo "Test project already exists"
+	else
+		echo "Creating test project"
+		lagoon add project \
+			-p test \
+			-g https://github.com/jackwrfuller/personal-hugo.git \
+			-E main \
+			-S $$DEPLOYTARGET_ID
+	fi
+	echo "Creating environment 'main' and kicking off deployment"
+	lagoon deploy branch -p test -b main --force
 
 # --- Cleanup ---
 nuke:
