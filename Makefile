@@ -20,11 +20,11 @@ SEED_ORG=cozone
 .PHONY: basic all dependencies k3s system helm-repos helm metallb cert-manager ingress homelab prometheus harbor minio postgres mariadb tools lagoon-core lagoon-remote
 
 # --- High-level targets ---
-basic: core-dependencies lagoon-core lagoon-remote lagoon-config
+basic: core-dependencies lagoon-core lagoon-remote lagoon-config build-deploy-tool push-local-build-image
 
 all: core-dependencies extras lagoon-core lagoon-remote lagoon-config
 
-core-dependencies: k3s sysctl helm-repos metallb cert-manager gatekeeper ingress registry minio
+core-dependencies: k3s system helm-repos metallb cert-manager gatekeeper ingress registry minio
 
 extras: homelab prometheus postgres 
 
@@ -519,7 +519,21 @@ post-install:
 	fi
 	echo "Creating environment 'main' and kicking off deployment"
 	lagoon deploy branch -p test -b main --force
+	# Create test project
+	if lagoon get project -p jellyfin --output-json | jq -e --arg projectname "jellyfin" '.data[] | select(.projectname==$$projectname)'; then
+		echo "Jellyfin project already exists"
+	else
+		echo "Creating jellyfin project"
+		lagoon add project \
+			-p jellyfin \
+			-g https://github.com/LagoonAtHome/jellyfin.git \
+			-E test-nfs \
+			-S $$DEPLOYTARGET_ID
+	fi
+	echo "Creating environment 'test-nfs' and kicking off deployment"
+	lagoon deploy branch -p jellyfin -b test-nfs --force
 
+.PHONY: build-deploy-tool
 build-deploy-tool:
 	export BDT_DIR=$$(mktemp -d ./build/bdt.XXX) \
 		&& ln -sfn "$$BDT_DIR" ./build/bdt \
@@ -538,8 +552,22 @@ push-local-build-image:
 
 
 # --- Cleanup ---
+.PHONY: clean-bdt
+clean-bdt:
+	@for dir in ./build/bdt.* ; do \
+		if [ -d $$dir ]; then \
+			echo "removing directory $$dir" ; \
+			rm -rf $$dir ; \
+		fi ; \
+	done
+	rm -f ./build/bdt
+# We need to remove the previous SSH key fingerprint to avoid errors since the key changes
+.PHONY: clean-ssh
+clean-ssh:
+	ssh-keygen -R [$$($(KUBECTL) get svc -n lagoon-core lagoon-core-ssh -o jsonpath='{.status.loadBalancer.ingress[0].ip}')]:2020
 
-nuke:
+
+nuke: clean-bdt clean-ssh
 	@echo "Nuking EVERYTHING"
 	bash /usr/local/bin/k3s-uninstall.sh
 	sudo rm -rf $(KUBECONFIG)
