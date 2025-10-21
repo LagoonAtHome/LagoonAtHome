@@ -17,7 +17,7 @@ SEED_USERNAME=jwrf@example.com
 SEED_PASSWORD=password
 SEED_ORG=cozone
 
-.PHONY: basic all dependencies k3s sysctl helm-repos helm metallb cert-manager ingress homelab prometheus harbor minio postgres mariadb tools lagoon-core lagoon-remote
+.PHONY: basic all dependencies k3s system helm-repos helm metallb cert-manager ingress homelab prometheus harbor minio postgres mariadb tools lagoon-core lagoon-remote
 
 # --- High-level targets ---
 basic: core-dependencies lagoon-core lagoon-remote lagoon-config
@@ -40,10 +40,13 @@ k3s:
 	sudo mv /tmp/registries.yaml /etc/rancher/k3s/registries.yaml
 	sudo systemctl restart k3s
 
-sysctl:
+system:
 	@echo "Configuring sysctl limits"
 	sudo sysctl fs.inotify.max_user_instances=8192
 	sudo sysctl fs.inotify.max_user_watches=524288
+	# Needed for NFS support
+	sudo apt update && sudo apt install -y nfs-common
+
 
 helm-repos: helm
 	@echo "Adding helm repos"
@@ -270,6 +273,7 @@ lagoon-core:
 	    --namespace lagoon-core \
 	    --wait \
 	    --timeout 10m \
+	    --set buildDeployImage.default.image="registry.$$($(KUBECTL) -n ingress-nginx get services ingress-nginx-controller -o jsonpath='{.status.loadBalancer.ingress[0].ip}').nip.io/library/build-deploy-image:edge" \
 	    --set lagoonSeedUsername="$(SEED_USERNAME)" \
             --set lagoonSeedPassword=$(SEED_PASSWORD) \
             --set lagoonSeedOrganization=$(SEED_ORG) \
@@ -516,7 +520,25 @@ post-install:
 	echo "Creating environment 'main' and kicking off deployment"
 	lagoon deploy branch -p test -b main --force
 
+build-deploy-tool:
+	export BDT_DIR=$$(mktemp -d ./build/bdt.XXX) \
+		&& ln -sfn "$$BDT_DIR" ./build/bdt \
+		&& git clone git@github.com:LagoonAtHome/build-deploy-tool.git "$$BDT_DIR" \
+		&& cd "$$BDT_DIR" \
+		&& git checkout nfs-volumes \
+		&& make docker-build
+
+.PHONY: push-local-build-image
+push-local-build-image:
+	@export KUBECONFIG="$$KUBECONFIG" && \
+		export IMAGE_REGISTRY="registry.$$($(KUBECTL) -n ingress-nginx get services ingress-nginx-controller -o jsonpath='{.status.loadBalancer.ingress[0].ip}').nip.io/library" \
+		&& docker login -u admin -p Harbor12345 $$IMAGE_REGISTRY \
+		&& docker tag lagoon/build-deploy-image:local $$IMAGE_REGISTRY/build-deploy-image:edge \
+		&& docker push $$IMAGE_REGISTRY/build-deploy-image:edge
+
+
 # --- Cleanup ---
+
 nuke:
 	@echo "Nuking EVERYTHING"
 	bash /usr/local/bin/k3s-uninstall.sh
