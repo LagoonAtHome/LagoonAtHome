@@ -5,3 +5,5 @@
 </p>
 
 Coming soon.
+
+A lightweight distribution of Lagoon tailored for bare-metal setups, particularly homelabs.
