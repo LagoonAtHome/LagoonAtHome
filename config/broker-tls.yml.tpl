@@ -10,7 +10,7 @@ spec:
     - server auth
     - client auth
   dnsNames:
-    - "broker.lagoon.jwrf.au"
+    - "broker.${DOMAIN}"
     - "lagoon-core-broker.lagoon-core.svc"
     - "lagoon-core-broker.lagoon-core.svc.cluster.local"
   issuerRef:

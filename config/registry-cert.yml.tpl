@@ -6,9 +6,8 @@ metadata:
 spec:
   secretName: registry-tls
   issuerRef:
-    name: lagoon-selfsigned
+    name: lagoon-issuer
     kind: ClusterIssuer
-  commonName: registry.192.168.1.150.nip.io
+  commonName: registry.${DOMAIN}
   dnsNames:
-    - registry.192.168.1.150.nip.io
-
+    - registry.${DOMAIN}
