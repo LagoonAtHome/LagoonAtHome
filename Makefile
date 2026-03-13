@@ -320,7 +320,7 @@ postgres:
 		--wait \
 		--set auth.postgresPassword="$(POSTGRES_PASSWORD)" \
 		postgresql \
-		oci://registry-1.docker.io/cloudpirates/postgresql
+		oci://registry-1.docker.io/cloudpirates/postgres
 
 mariadb:
 	@echo "Installing MariaDB"
