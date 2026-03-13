@@ -169,6 +169,7 @@ helm-repos: helm
 	helm repo add harbor https://helm.goharbor.io
 	helm repo add ingress-nginx https://kubernetes.github.io/ingress-nginx
 	helm repo add stable https://charts.helm.sh/stable
+	# Note: PostgreSQL and MariaDB use cloudpirates OCI charts (no repo needed)
 	helm repo add amazeeio https://amazeeio.github.io/charts/
 	helm repo add lagoon https://uselagoon.github.io/lagoon-charts/
 	helm repo add minio https://charts.min.io/
@@ -176,7 +177,7 @@ helm-repos: helm
 	helm repo add metallb https://metallb.github.io/metallb
 	helm repo add jetstack https://charts.jetstack.io
 	helm repo add jouve https://jouve.github.io/charts/
-	helm repo add twuni https://helm.twun.io
+	helm repo add twuni https://twuni.github.io/docker-registry.helm
 	helm repo add k8up https://k8up-io.github.io/k8up
 	helm repo add appuio https://charts.appuio.ch
 	helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
@@ -317,11 +318,9 @@ postgres:
 		--create-namespace \
 		--namespace postgresql \
 		--wait \
-		--set image.tag="14.15.0-debian-12-r1" \
 		--set auth.postgresPassword="$(POSTGRES_PASSWORD)" \
-		--version=16.2.3 \
 		postgresql \
-		bitnami/postgresql
+		oci://registry-1.docker.io/cloudpirates/postgresql
 
 mariadb:
 	@echo "Installing MariaDB"
@@ -331,9 +330,8 @@ mariadb:
 		--namespace mariadb \
 		--wait \
 		--set auth.rootPassword="$(MARIADB_PASSWORD)" \
-		--version=13.1.3 \
 		mariadb \
-		bitnami/mariadb
+		oci://registry-1.docker.io/cloudpirates/mariadb
 
 prometheus:
 	@echo "Installing Prometheus Stack"
