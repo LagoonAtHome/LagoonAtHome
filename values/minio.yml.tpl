@@ -7,13 +7,26 @@ ingress:
   ingressClassName: nginx
   annotations:
     cert-manager.io/cluster-issuer: ${CLUSTER_ISSUER}
-  tls: true
-  hostname: minio-api.${DOMAIN}
-console:
-  ingress:
-    enabled: true
-    ingressClassName: nginx
-    tls: true
-    annotations:
-      cert-manager.io/cluster-issuer: ${CLUSTER_ISSUER}
-    hostname: minio.${DOMAIN}
+  hosts:
+    - host: minio-api.${DOMAIN}
+      paths:
+        - path: /
+          pathType: Prefix
+  tls:
+    - hosts:
+        - minio-api.${DOMAIN}
+      secretName: minio-api-tls
+consoleIngress:
+  enabled: true
+  ingressClassName: nginx
+  annotations:
+    cert-manager.io/cluster-issuer: ${CLUSTER_ISSUER}
+  hosts:
+    - host: minio.${DOMAIN}
+      paths:
+        - path: /
+          pathType: Prefix
+  tls:
+    - hosts:
+        - minio.${DOMAIN}
+      secretName: minio-console-tls
