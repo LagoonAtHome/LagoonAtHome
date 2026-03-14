@@ -462,33 +462,72 @@ lagoon-cli:
 # --- Lagoon post-install configuration ---
 post-install:
 	@echo "Configuring Lagoon"
+	# Wait for API to be reachable (Keycloak migrations can take several minutes)
+	@echo "Waiting for Lagoon API to become ready..."
+	@ATTEMPTS=0; MAX_ATTEMPTS=60; \
+	while [ $$ATTEMPTS -lt $$MAX_ATTEMPTS ]; do \
+		STATUS=$$(curl -s -k -o /dev/null -w '%{http_code}' http://api.$(DOMAIN)/graphql 2>/dev/null || echo "000"); \
+		if [ "$$STATUS" = "200" ] || [ "$$STATUS" = "405" ]; then \
+			echo "API is ready (HTTP $$STATUS)"; \
+			break; \
+		fi; \
+		ATTEMPTS=$$((ATTEMPTS + 1)); \
+		echo "  Attempt $$ATTEMPTS/$$MAX_ATTEMPTS — API returned HTTP $$STATUS, retrying in 10s..."; \
+		sleep 10; \
+	done; \
+	if [ $$ATTEMPTS -ge $$MAX_ATTEMPTS ]; then \
+		echo "ERROR: API did not become ready after $$MAX_ATTEMPTS attempts"; \
+		echo "Check pod status: kubectl -n lagoon-core get pods"; \
+		exit 1; \
+	fi
+	# Wait for Keycloak to be reachable
+	@echo "Waiting for Keycloak to become ready..."
+	@ATTEMPTS=0; MAX_ATTEMPTS=60; \
+	while [ $$ATTEMPTS -lt $$MAX_ATTEMPTS ]; do \
+		STATUS=$$(curl -s -k -o /dev/null -w '%{http_code}' https://keycloak.$(DOMAIN)/auth/ 2>/dev/null || echo "000"); \
+		if [ "$$STATUS" = "200" ] || [ "$$STATUS" = "303" ]; then \
+			echo "Keycloak is ready (HTTP $$STATUS)"; \
+			break; \
+		fi; \
+		ATTEMPTS=$$((ATTEMPTS + 1)); \
+		echo "  Attempt $$ATTEMPTS/$$MAX_ATTEMPTS — Keycloak returned HTTP $$STATUS, retrying in 10s..."; \
+		sleep 10; \
+	done; \
+	if [ $$ATTEMPTS -ge $$MAX_ATTEMPTS ]; then \
+		echo "ERROR: Keycloak did not become ready after $$MAX_ATTEMPTS attempts"; \
+		echo "Check pod status: kubectl -n lagoon-core get pods"; \
+		exit 1; \
+	fi
 	# Obtain JWT token
-	JWTUSER=localadmin; \
+	@JWTUSER=localadmin; \
 	JWTAUDIENCE=api.dev; \
 	JWTSECRET=$$(kubectl get secret -n lagoon-core lagoon-core-secrets -o json | jq -r '.data.JWTSECRET | @base64d'); \
 	TOKEN=$$(jwt encode --alg HS256 --no-iat --payload role=admin --iss "$$JWTUSER" --aud "$$JWTAUDIENCE" --sub "$$JWTUSER" --secret "$$JWTSECRET"); \
 	echo "Creating user $(ADMIN_EMAIL)"; \
 	QUERY='mutation ($$email: String!, $$firstName: String, $$lastName: String, $$comment: String) { addUser(input: { email: $$email, firstName: $$firstName, lastName: $$lastName, comment: $$comment }) { id email firstName lastName } }'; \
 	VARIABLES='{"email": "$(ADMIN_EMAIL)", "firstName": "$(ADMIN_FIRST_NAME)", "lastName": "$(ADMIN_LAST_NAME)", "comment": "Created via installer"}'; \
-	curl -s -X POST http://api.$(DOMAIN)/graphql \
+	RESULT=$$(curl -s -k -X POST http://api.$(DOMAIN)/graphql \
 		-H "Content-Type: application/json" \
 		-H "Authorization: Bearer $$TOKEN" \
-		-d "$$(jq -n --arg query "$$QUERY" --argjson variables "$$VARIABLES" '{query: $$query, variables: $$variables}')"; \
+		-d "$$(jq -n --arg query "$$QUERY" --argjson variables "$$VARIABLES" '{query: $$query, variables: $$variables}')"); \
+	echo "$$RESULT"; \
 	echo "Assigning platform owner role"; \
 	QUERY='mutation ($$user: UserInput!, $$role: PlatformRole!) { addPlatformRoleToUser(user: $$user, role: $$role) { id email platformRoles } }'; \
 	VARIABLES='{ "user": { "email": "$(ADMIN_EMAIL)" }, "role": "OWNER" }'; \
-	curl -s -X POST http://api.$(DOMAIN)/graphql \
+	RESULT=$$(curl -s -k -X POST http://api.$(DOMAIN)/graphql \
 		-H "Content-Type: application/json" \
 		-H "Authorization: Bearer $$TOKEN" \
-		-d "$$(jq -n --arg query "$$QUERY" --argjson variables "$$VARIABLES" '{query: $$query, variables: $$variables}')"; \
+		-d "$$(jq -n --arg query "$$QUERY" --argjson variables "$$VARIABLES" '{query: $$query, variables: $$variables}')"); \
+	echo "$$RESULT"; \
 	echo "Adding SSH key"; \
 	SSH_KEY_NAME="lagoon-admin"; \
 	SSH_KEY_VALUE=$$(cat $(SSH_KEY_PATH).pub); \
 	JSON=$$(printf '{"query":"mutation { addUserSSHPublicKey(input: {name: \\"%s\\", publicKey: \\"%s\\", user: {email: \\"%s\\"}}) { id } }"}' "$$SSH_KEY_NAME" "$$SSH_KEY_VALUE" "$(ADMIN_EMAIL)"); \
-	curl -s -X POST http://api.$(DOMAIN)/graphql \
+	RESULT=$$(curl -s -k -X POST http://api.$(DOMAIN)/graphql \
 		-H 'Content-Type: application/json' \
 		-H "Authorization: Bearer $$TOKEN" \
-		-d "$$JSON"; \
+		-d "$$JSON"); \
+	echo "$$RESULT"; \
 	echo "Getting Keycloak token"; \
 	KEYCLOAK_URL=https://keycloak.$(DOMAIN); \
 	KEYCLOAK_SECRET=$$(kubectl -n lagoon-core get secret lagoon-core-keycloak -o jsonpath='{.data.KEYCLOAK_ADMIN_API_CLIENT_SECRET}' | base64 --decode); \
@@ -497,6 +536,11 @@ post-install:
 		-d "client_id=admin-api" \
 		-d "client_secret=$$KEYCLOAK_SECRET"); \
 	KEYCLOAK_TOKEN=$$(echo "$$KEYCLOAK_RESPONSE" | jq -r '.access_token'); \
+	if [ -z "$$KEYCLOAK_TOKEN" ] || [ "$$KEYCLOAK_TOKEN" = "null" ]; then \
+		echo "ERROR: Failed to obtain Keycloak token"; \
+		echo "Response: $$KEYCLOAK_RESPONSE"; \
+		exit 1; \
+	fi; \
 	echo "Resetting password for $(ADMIN_EMAIL)"; \
 	USER_JSON=$$(curl -s -k -H "Authorization: Bearer $$KEYCLOAK_TOKEN" \
 		-H "Content-Type: application/json" \
