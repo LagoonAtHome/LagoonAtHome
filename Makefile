@@ -142,6 +142,28 @@ system:
 	sudo sysctl fs.inotify.max_user_watches=524288
 	@echo "fs.inotify.max_user_instances=8192" | sudo tee /etc/sysctl.d/99-lagoon.conf > /dev/null
 	@echo "fs.inotify.max_user_watches=524288" | sudo tee -a /etc/sysctl.d/99-lagoon.conf > /dev/null
+	# Configure firewall for k3s (required on Fedora/RHEL where firewalld is enabled by default)
+	# Without this, pod-to-pod communication via the CNI bridge is blocked, causing 502 errors
+	@if command -v firewall-cmd >/dev/null 2>&1 && systemctl is-active --quiet firewalld 2>/dev/null; then \
+		echo "Configuring firewalld for k3s..."; \
+		sudo firewall-cmd --permanent --zone=trusted --add-source=10.42.0.0/16 2>/dev/null || true; \
+		sudo firewall-cmd --permanent --zone=trusted --add-source=10.43.0.0/16 2>/dev/null || true; \
+		if ip link show cni0 >/dev/null 2>&1; then \
+			sudo firewall-cmd --permanent --zone=trusted --add-interface=cni0 2>/dev/null || true; \
+		fi; \
+		if ip link show flannel.1 >/dev/null 2>&1; then \
+			sudo firewall-cmd --permanent --zone=trusted --add-interface=flannel.1 2>/dev/null || true; \
+		fi; \
+		sudo firewall-cmd --permanent --add-port=6443/tcp 2>/dev/null || true; \
+		sudo firewall-cmd --permanent --add-port=10250/tcp 2>/dev/null || true; \
+		sudo firewall-cmd --permanent --add-port=80/tcp 2>/dev/null || true; \
+		sudo firewall-cmd --permanent --add-port=443/tcp 2>/dev/null || true; \
+		sudo firewall-cmd --permanent --add-port=8472/udp 2>/dev/null || true; \
+		sudo firewall-cmd --reload; \
+		echo "Firewall configured for k3s"; \
+	else \
+		echo "firewalld not active, skipping firewall configuration"; \
+	fi
 	# Install NFS support
 	@if [ -f /run/ostree-booted ]; then \
 		echo "Immutable OS detected (ostree/atomic)"; \
