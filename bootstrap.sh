@@ -45,10 +45,13 @@ fi
 ok "Repository ready at $DEST"
 cd "$DEST"
 
-# Re-attach stdin to the controlling terminal so install.sh's prompts work
-# even when this script was invoked through a curl-pipe.
-if [ ! -t 0 ]; then
-    exec </dev/tty
+# Run install.sh with stdin attached to the terminal so prompts work
+# even when bootstrap was invoked via curl | bash (which leaves stdin
+# wired to the curl pipe).
+if [ -e /dev/tty ] && [ ! -t 0 ]; then
+    info "Handing off to install.sh"
+    exec ./install.sh "$@" </dev/tty
+else
+    info "Handing off to install.sh"
+    exec ./install.sh "$@"
 fi
-
-exec ./install.sh "$@"
