@@ -39,25 +39,17 @@ ifeq ($(INSTALL_HARBOR),true)
 REGISTRY_HOST := harbor.$(DOMAIN)
 REGISTRY_USER := admin
 REGISTRY_PASSWORD = $(HARBOR_PASSWORD)
-# When Harbor is the build registry, lagoon-build-deploy needs admin creds so it can
-# create per-project robot accounts and rotate them — see chart values.yaml `harbor:`.
-LAGOON_REMOTE_HARBOR_ARGS = \
-	--set lagoon-build-deploy.harbor.enabled=true \
-	--set lagoon-build-deploy.harbor.host=https://harbor.$(DOMAIN) \
-	--set lagoon-build-deploy.harbor.adminUser=admin \
-	--set lagoon-build-deploy.harbor.adminPassword='$(HARBOR_PASSWORD)'
 else
 REGISTRY_HOST = registry.$$($(KUBECTL) -n ingress-nginx get services ingress-nginx-controller -o jsonpath='{.status.loadBalancer.ingress[0].ip}').nip.io
 REGISTRY_USER := admin
 REGISTRY_PASSWORD := Harbor12345
-LAGOON_REMOTE_HARBOR_ARGS :=
 endif
 
 # Explicit list of variables for envsubst (avoids clobbering $$i, $$namespace, etc. in YAML)
 ENVSUBST_VARS := '$${DOMAIN} $${CLUSTER_ISSUER} $${ADMIN_EMAIL} $${ADMIN_PASSWORD} \
 	$${ORG_NAME} $${MINIO_PASSWORD} $${HARBOR_PASSWORD} $${POSTGRES_PASSWORD} \
 	$${MARIADB_PASSWORD} $${ACME_EMAIL} $${CLOUDFLARE_API_TOKEN} $${NODE_IP} \
-	$${LAGOON_NETWORK_RANGE} $${BASE_URL}'
+	$${LAGOON_NETWORK_RANGE} $${BASE_URL} $${INSTALL_HARBOR}'
 
 # Backwards compat
 BASE_URL := $(DOMAIN)
@@ -475,14 +467,6 @@ lagoon-core:
 		--timeout 10m \
 		-f build/values/lagoon-core.yml \
 		--set buildDeployImage.default.image="$(REGISTRY_HOST)/library/build-deploy-image:edge" \
-		--set elasticsearchURL="not-real-but-necessary.example.com" \
-		--set kibanaURL="not-real-but-necessary.example.com" \
-		--set keycloak.serviceMonitor.enabled=false \
-		--set broker.serviceMonitor.enabled=false \
-		--set drushAlias.enabled=false \
-		--set backupHandler.enabled=false \
-		--set sshToken.enabled=false \
-		--set sshToken.serviceMonitor.enabled=false \
 		--set-file ssh.hostKeys.rsa=generated/ssh-host-keys/ssh_host_rsa_key \
 		--set-file ssh.hostKeys.rsaPub=generated/ssh-host-keys/ssh_host_rsa_key.pub \
 		--set-file ssh.hostKeys.ecdsa=generated/ssh-host-keys/ssh_host_ecdsa_key \
@@ -509,7 +493,6 @@ lagoon-remote:
 		--set "global.rabbitMQPassword=$$($(KUBECTL) -n lagoon-core get secret lagoon-core-broker -o json | jq -r '.data.RABBITMQ_PASSWORD | @base64d')" \
 		--set "lagoon-build-deploy.rabbitMQPassword=$$($(KUBECTL) -n lagoon-core get secret lagoon-core-broker -o json | jq -r '.data.RABBITMQ_PASSWORD | @base64d')" \
 		--set "lagoon-build-deploy.unauthenticatedRegistry=$(REGISTRY_HOST)" \
-		$(LAGOON_REMOTE_HARBOR_ARGS) \
 		--set-file sshPortal.hostKeys.ed25519=generated/ssh-host-keys/ssh_portal_ed25519_key \
 		lagoon-remote \
 		lagoon/lagoon-remote
