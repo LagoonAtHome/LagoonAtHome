@@ -362,12 +362,18 @@ minio:
 	@echo "Installing MinIO"
 	# Pre-create the auth secret so the chart's "preserve existing secret on upgrade"
 	# behaviour can't pin us to a stale password. The cloudpirates chart consumes
-	# secret/minio with keys root-user and root-password.
+	# secret/minio with keys root-user and root-password. Helm ownership labels make
+	# the chart adopt this Secret rather than refuse to install.
 	kubectl create namespace minio --dry-run=client -o yaml | kubectl apply -f -
 	kubectl -n minio create secret generic minio \
 		--from-literal=root-user=admin \
 		--from-literal=root-password='$(MINIO_PASSWORD)' \
 		--dry-run=client -o yaml | kubectl apply -f -
+	kubectl -n minio label   secret minio app.kubernetes.io/managed-by=Helm --overwrite
+	kubectl -n minio annotate secret minio \
+		meta.helm.sh/release-name=minio \
+		meta.helm.sh/release-namespace=minio \
+		--overwrite
 	helm upgrade \
 		--install \
 		--create-namespace \
