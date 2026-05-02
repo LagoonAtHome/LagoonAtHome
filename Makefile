@@ -49,7 +49,7 @@ endif
 ENVSUBST_VARS := '$${DOMAIN} $${CLUSTER_ISSUER} $${ADMIN_EMAIL} $${ADMIN_PASSWORD} \
 	$${ORG_NAME} $${MINIO_PASSWORD} $${HARBOR_PASSWORD} $${POSTGRES_PASSWORD} \
 	$${MARIADB_PASSWORD} $${ACME_EMAIL} $${CLOUDFLARE_API_TOKEN} $${NODE_IP} \
-	$${LAGOON_NETWORK_RANGE} $${BASE_URL}'
+	$${LAGOON_NETWORK_RANGE} $${BASE_URL} $${INSTALL_HARBOR}'
 
 # Backwards compat
 BASE_URL := $(DOMAIN)
@@ -221,6 +221,32 @@ system:
 		sudo pacman -S --noconfirm nfs-utils; \
 	else \
 		echo "Warning: Could not detect package manager. Install NFS client manually."; \
+	fi
+	# Install Docker + Buildx — required by `make build-deploy-tool` to build the
+	# build-deploy-image. Ubuntu's docker.io ships without buildx, so the buildx
+	# package must be installed separately.
+	@if ! command -v docker >/dev/null 2>&1 || ! docker buildx version >/dev/null 2>&1; then \
+		echo "Installing Docker + buildx..."; \
+		if [ -f /run/ostree-booted ]; then \
+			echo "Immutable OS detected — install Docker manually (e.g. via toolbox/distrobox or rpm-ostree)"; \
+		elif command -v apt-get >/dev/null 2>&1; then \
+			sudo apt-get update && sudo apt-get install -y docker.io docker-buildx; \
+		elif command -v dnf >/dev/null 2>&1; then \
+			sudo dnf install -y moby-engine docker-buildx || sudo dnf install -y docker docker-buildx; \
+		elif command -v pacman >/dev/null 2>&1; then \
+			sudo pacman -S --noconfirm docker docker-buildx; \
+		else \
+			echo "Warning: Could not detect package manager. Install Docker + buildx manually."; \
+		fi; \
+		if command -v systemctl >/dev/null 2>&1; then \
+			sudo systemctl enable --now docker 2>/dev/null || true; \
+		fi; \
+		if ! id -nG "$$USER" | grep -qw docker; then \
+			sudo usermod -aG docker $$USER; \
+			echo "Added $$USER to the docker group — log out/in (or run 'newgrp docker') before 'make build-deploy-tool'"; \
+		fi; \
+	else \
+		echo "Docker + buildx already installed"; \
 	fi
 
 helm-repos: helm
@@ -441,14 +467,6 @@ lagoon-core:
 		--timeout 10m \
 		-f build/values/lagoon-core.yml \
 		--set buildDeployImage.default.image="$(REGISTRY_HOST)/library/build-deploy-image:edge" \
-		--set elasticsearchURL="not-real-but-necessary.example.com" \
-		--set kibanaURL="not-real-but-necessary.example.com" \
-		--set keycloak.serviceMonitor.enabled=false \
-		--set broker.serviceMonitor.enabled=false \
-		--set drushAlias.enabled=false \
-		--set backupHandler.enabled=false \
-		--set sshToken.enabled=false \
-		--set sshToken.serviceMonitor.enabled=false \
 		--set-file ssh.hostKeys.rsa=generated/ssh-host-keys/ssh_host_rsa_key \
 		--set-file ssh.hostKeys.rsaPub=generated/ssh-host-keys/ssh_host_rsa_key.pub \
 		--set-file ssh.hostKeys.ecdsa=generated/ssh-host-keys/ssh_host_ecdsa_key \

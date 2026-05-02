@@ -24,7 +24,10 @@ lagoon-build-deploy:
   extraArgs:
     - "--skip-tls-verify=true"
   harbor:
-    enabled: false
+    enabled: ${INSTALL_HARBOR}
+    host: https://harbor.${DOMAIN}
+    adminUser: admin
+    adminPassword: ${HARBOR_PASSWORD}
   broker:
     tls:
       enabled: false

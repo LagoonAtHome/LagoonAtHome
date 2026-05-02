@@ -15,10 +15,13 @@ harborAdminPassword: ${HARBOR_PASSWORD}
 lagoonAPIURL: https://api.${DOMAIN}/graphql
 keycloakFrontEndURL: https://keycloak.${DOMAIN}
 lagoonUIURL: https://dashboard.${DOMAIN}
+lagoonWebhookURL: https://webhooks.${DOMAIN}
 sshTokenEndpoint: https://ssh-token.${DOMAIN}
 
-elasticsearchURL: http://opendistro-es-client-service.opendistro-es.svc.cluster.local:9200
-kibanaURL: http://opendistro-es-kibana-svc.opendistro-es.svc.cluster.local:443
+# Lagoon API requires these to be set; we don't ship opendistro/elasticsearch in this chart,
+# so point them at unreachable placeholders to satisfy validation.
+elasticsearchURL: not-real-but-necessary.example.com
+kibanaURL: not-real-but-necessary.example.com
 
 rabbitMQPassword: password
 
@@ -162,6 +165,19 @@ webhookHandler:
   resources:
     requests:
       cpu: "10m"
+  ingress:
+    enabled: true
+    hosts:
+      - host: webhooks.${DOMAIN}
+        paths:
+          - /
+    tls:
+      - hosts:
+          - webhooks.${DOMAIN}
+        secretName: webhookhandler-tls
+    annotations:
+      cert-manager.io/cluster-issuer: ${CLUSTER_ISSUER}
+      nginx.ingress.kubernetes.io/ssl-redirect: "false"
 
 ui:
   replicaCount: 1
@@ -185,6 +201,7 @@ ui:
       nginx.ingress.kubernetes.io/ssl-redirect: "true"
 
 backupHandler:
+  enabled: false
   replicaCount: 1
   image:
     repository: uselagoon/backup-handler
@@ -203,6 +220,7 @@ logs2notifications:
     repository: uselagoon/logs2notifications
 
 drushAlias:
+  enabled: false
   replicaCount: 1
   image:
     repository: uselagoon/drush-alias
@@ -234,7 +252,7 @@ sshPortalAPI:
       exit; sleep 10; let i=i+1; done
 
 sshToken:
-  enabled: true
+  enabled: false
   replicaCount: 1
   debug: true
   insecureTLS: true
