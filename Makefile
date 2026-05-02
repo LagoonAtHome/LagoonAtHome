@@ -674,8 +674,8 @@ post-install:
 	fi
 
 build-deploy-tool:
-	export BDT_DIR=$$(mktemp -d ./build/bdt.XXX) \
-		&& ln -sfn "$$BDT_DIR" ./build/bdt \
+	export BDT_DIR=$$(mktemp -d ./tmp/bdt.XXX) \
+		&& ln -sfn "$$BDT_DIR" ./tmp/bdt \
 		&& git clone https://github.com/LagoonAtHome/build-deploy-tool.git "$$BDT_DIR" \
 		&& cd "$$BDT_DIR" \
 		&& make docker-build
