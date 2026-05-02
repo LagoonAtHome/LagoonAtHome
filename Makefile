@@ -39,10 +39,18 @@ ifeq ($(INSTALL_HARBOR),true)
 REGISTRY_HOST := harbor.$(DOMAIN)
 REGISTRY_USER := admin
 REGISTRY_PASSWORD = $(HARBOR_PASSWORD)
+# When Harbor is the build registry, lagoon-build-deploy needs admin creds so it can
+# create per-project robot accounts and rotate them — see chart values.yaml `harbor:`.
+LAGOON_REMOTE_HARBOR_ARGS = \
+	--set lagoon-build-deploy.harbor.enabled=true \
+	--set lagoon-build-deploy.harbor.host=https://harbor.$(DOMAIN) \
+	--set lagoon-build-deploy.harbor.adminUser=admin \
+	--set lagoon-build-deploy.harbor.adminPassword='$(HARBOR_PASSWORD)'
 else
 REGISTRY_HOST = registry.$$($(KUBECTL) -n ingress-nginx get services ingress-nginx-controller -o jsonpath='{.status.loadBalancer.ingress[0].ip}').nip.io
 REGISTRY_USER := admin
 REGISTRY_PASSWORD := Harbor12345
+LAGOON_REMOTE_HARBOR_ARGS :=
 endif
 
 # Explicit list of variables for envsubst (avoids clobbering $$i, $$namespace, etc. in YAML)
@@ -221,6 +229,32 @@ system:
 		sudo pacman -S --noconfirm nfs-utils; \
 	else \
 		echo "Warning: Could not detect package manager. Install NFS client manually."; \
+	fi
+	# Install Docker + Buildx — required by `make build-deploy-tool` to build the
+	# build-deploy-image. Ubuntu's docker.io ships without buildx, so the buildx
+	# package must be installed separately.
+	@if ! command -v docker >/dev/null 2>&1 || ! docker buildx version >/dev/null 2>&1; then \
+		echo "Installing Docker + buildx..."; \
+		if [ -f /run/ostree-booted ]; then \
+			echo "Immutable OS detected — install Docker manually (e.g. via toolbox/distrobox or rpm-ostree)"; \
+		elif command -v apt-get >/dev/null 2>&1; then \
+			sudo apt-get update && sudo apt-get install -y docker.io docker-buildx; \
+		elif command -v dnf >/dev/null 2>&1; then \
+			sudo dnf install -y moby-engine docker-buildx || sudo dnf install -y docker docker-buildx; \
+		elif command -v pacman >/dev/null 2>&1; then \
+			sudo pacman -S --noconfirm docker docker-buildx; \
+		else \
+			echo "Warning: Could not detect package manager. Install Docker + buildx manually."; \
+		fi; \
+		if command -v systemctl >/dev/null 2>&1; then \
+			sudo systemctl enable --now docker 2>/dev/null || true; \
+		fi; \
+		if ! id -nG "$$USER" | grep -qw docker; then \
+			sudo usermod -aG docker $$USER; \
+			echo "Added $$USER to the docker group — log out/in (or run 'newgrp docker') before 'make build-deploy-tool'"; \
+		fi; \
+	else \
+		echo "Docker + buildx already installed"; \
 	fi
 
 helm-repos: helm
@@ -475,6 +509,7 @@ lagoon-remote:
 		--set "global.rabbitMQPassword=$$($(KUBECTL) -n lagoon-core get secret lagoon-core-broker -o json | jq -r '.data.RABBITMQ_PASSWORD | @base64d')" \
 		--set "lagoon-build-deploy.rabbitMQPassword=$$($(KUBECTL) -n lagoon-core get secret lagoon-core-broker -o json | jq -r '.data.RABBITMQ_PASSWORD | @base64d')" \
 		--set "lagoon-build-deploy.unauthenticatedRegistry=$(REGISTRY_HOST)" \
+		$(LAGOON_REMOTE_HARBOR_ARGS) \
 		--set-file sshPortal.hostKeys.ed25519=generated/ssh-host-keys/ssh_portal_ed25519_key \
 		lagoon-remote \
 		lagoon/lagoon-remote

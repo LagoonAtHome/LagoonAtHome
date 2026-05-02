@@ -15,6 +15,7 @@ harborAdminPassword: ${HARBOR_PASSWORD}
 lagoonAPIURL: https://api.${DOMAIN}/graphql
 keycloakFrontEndURL: https://keycloak.${DOMAIN}
 lagoonUIURL: https://dashboard.${DOMAIN}
+lagoonWebhookURL: https://webhooks.${DOMAIN}
 sshTokenEndpoint: https://ssh-token.${DOMAIN}
 
 elasticsearchURL: http://opendistro-es-client-service.opendistro-es.svc.cluster.local:9200
@@ -162,6 +163,19 @@ webhookHandler:
   resources:
     requests:
       cpu: "10m"
+  ingress:
+    enabled: true
+    hosts:
+      - host: webhooks.${DOMAIN}
+        paths:
+          - /
+    tls:
+      - hosts:
+          - webhooks.${DOMAIN}
+        secretName: webhookhandler-tls
+    annotations:
+      cert-manager.io/cluster-issuer: ${CLUSTER_ISSUER}
+      nginx.ingress.kubernetes.io/ssl-redirect: "false"
 
 ui:
   replicaCount: 1
