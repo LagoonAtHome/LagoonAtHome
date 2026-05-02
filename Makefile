@@ -382,8 +382,6 @@ minio:
 		-f build/values/minio.yml \
 		minio \
 		oci://registry-1.docker.io/cloudpirates/minio
-	$(KUBECTL) -n minio exec -it $$($(KUBECTL) -n minio get pod -l app.kubernetes.io/name=minio -o jsonpath="{.items[0].metadata.name}") \
-		-- sh -c 'mc alias set local http://localhost:9000 admin $(MINIO_PASSWORD) && mc mb local/lagoon-files && mc mb local/restores' || true
 
 postgres:
 	@echo "Installing PostgreSQL"
@@ -678,9 +676,8 @@ post-install:
 build-deploy-tool:
 	export BDT_DIR=$$(mktemp -d ./build/bdt.XXX) \
 		&& ln -sfn "$$BDT_DIR" ./build/bdt \
-		&& git clone git@github.com:LagoonAtHome/build-deploy-tool.git "$$BDT_DIR" \
+		&& git clone https://github.com/LagoonAtHome/build-deploy-tool.git "$$BDT_DIR" \
 		&& cd "$$BDT_DIR" \
-		&& git checkout nfs-volumes \
 		&& make docker-build
 
 push-local-build-image:
