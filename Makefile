@@ -501,20 +501,29 @@ post-install:
 	@echo "Configuring Lagoon"
 	# Wait for API to be reachable (Keycloak migrations can take several minutes)
 	@echo "Waiting for Lagoon API to become ready..."
-	@ATTEMPTS=0; MAX_ATTEMPTS=60; \
+	@JWTUSER=localadmin; \
+	JWTAUDIENCE=api.dev; \
+	JWTSECRET=$$(kubectl get secret -n lagoon-core lagoon-core-secrets -o json | jq -r '.data.JWTSECRET | @base64d'); \
+	TOKEN=$$(jwt encode --alg HS256 --no-iat --payload role=admin --iss "$$JWTUSER" --aud "$$JWTAUDIENCE" --sub "$$JWTUSER" --secret "$$JWTSECRET"); \
+	ATTEMPTS=0; MAX_ATTEMPTS=60; \
 	while [ $$ATTEMPTS -lt $$MAX_ATTEMPTS ]; do \
-		STATUS=$$(curl -s -k -o /dev/null -w '%{http_code}' http://api.$(DOMAIN)/graphql 2>/dev/null || echo "000"); \
-		if [ "$$STATUS" = "200" ] || [ "$$STATUS" = "405" ]; then \
-			echo "API is ready (HTTP $$STATUS)"; \
+		BODY=$$(curl -s -k -X POST http://api.$(DOMAIN)/graphql \
+			-H "Content-Type: application/json" \
+			-H "Authorization: Bearer $$TOKEN" \
+			-d '{"query":"{ __typename }"}' 2>/dev/null); \
+		if echo "$$BODY" | jq -e '.data.__typename' >/dev/null 2>&1; then \
+			echo "API is ready and accepting admin JWT"; \
 			break; \
 		fi; \
 		ATTEMPTS=$$((ATTEMPTS + 1)); \
-		echo "  Attempt $$ATTEMPTS/$$MAX_ATTEMPTS — API returned HTTP $$STATUS, retrying in 10s..."; \
+		ERR=$$(echo "$$BODY" | jq -r '.errors[0].message // empty' 2>/dev/null); \
+		echo "  Attempt $$ATTEMPTS/$$MAX_ATTEMPTS — API not ready ($${ERR:-no response}), retrying in 10s..."; \
 		sleep 10; \
 	done; \
 	if [ $$ATTEMPTS -ge $$MAX_ATTEMPTS ]; then \
-		echo "ERROR: API did not become ready after $$MAX_ATTEMPTS attempts"; \
-		echo "Check pod status: kubectl -n lagoon-core get pods"; \
+		echo "ERROR: API did not accept admin JWT after $$MAX_ATTEMPTS attempts"; \
+		echo "Check JWTSECRET parity: kubectl -n lagoon-core get secret lagoon-core-secrets -o yaml"; \
+		echo "Check API logs: kubectl -n lagoon-core logs deploy/lagoon-core-api"; \
 		exit 1; \
 	fi
 	# Wait for Keycloak to be reachable
