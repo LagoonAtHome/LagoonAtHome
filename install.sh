@@ -149,9 +149,36 @@ detect_default_ip() {
     fi
 }
 
+install_pkg() {
+    local pkg="$1"
+    if command -v apt-get >/dev/null 2>&1; then
+        sudo apt-get update -qq && sudo apt-get install -y "$pkg"
+    elif command -v dnf >/dev/null 2>&1; then
+        sudo dnf install -y "$pkg"
+    elif command -v yum >/dev/null 2>&1; then
+        sudo yum install -y "$pkg"
+    elif command -v pacman >/dev/null 2>&1; then
+        sudo pacman -S --noconfirm "$pkg"
+    elif command -v zypper >/dev/null 2>&1; then
+        sudo zypper install -y "$pkg"
+    else
+        return 1
+    fi
+}
+
 check_prerequisites() {
+    # Try to auto-install make if it's missing — install.sh hands off to the Makefile,
+    # so without it the installer dies in run_installation with an unhelpful error.
+    if ! command -v make >/dev/null 2>&1; then
+        info "make not found, attempting to install it"
+        if ! install_pkg make; then
+            error "Could not auto-install make. Please install it manually and re-run."
+            exit 1
+        fi
+    fi
+
     local missing=()
-    for cmd in curl git openssl ssh-keygen; do
+    for cmd in curl git openssl ssh-keygen make; do
         if ! command -v "$cmd" >/dev/null 2>&1; then
             missing+=("$cmd")
         fi
@@ -458,17 +485,16 @@ run_installation() {
     step "Installing Ingress Nginx"
     run_step "ingress"
 
-    step "Installing Docker registry"
-    run_step "registry"
+    if [ "${INSTALL_HARBOR:-false}" = "true" ]; then
+        step "Installing Harbor (build registry)"
+        run_step "harbor"
+    else
+        step "Installing Docker registry"
+        run_step "registry"
+    fi
 
     step "Installing MinIO"
     run_step "minio"
-
-    # Optional components
-    if [ "${INSTALL_HARBOR:-false}" = "true" ]; then
-        step "Installing Harbor"
-        run_step "harbor"
-    fi
 
     if [ "${INSTALL_POSTGRES:-true}" = "true" ]; then
         step "Installing PostgreSQL"

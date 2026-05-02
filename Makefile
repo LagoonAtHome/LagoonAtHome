@@ -33,6 +33,18 @@ INSTALL_POSTGRES ?= true
 INSTALL_MARIADB ?= true
 INSTALL_HEADLAMP ?= false
 
+# Build registry: Harbor when enabled, otherwise the unauthenticated twuni registry on the ingress IP.
+# Lagoon's build pipeline pulls/pushes against this — see lagoon-core, lagoon-remote, push-local-build-image.
+ifeq ($(INSTALL_HARBOR),true)
+REGISTRY_HOST := harbor.$(DOMAIN)
+REGISTRY_USER := admin
+REGISTRY_PASSWORD = $(HARBOR_PASSWORD)
+else
+REGISTRY_HOST = registry.$$($(KUBECTL) -n ingress-nginx get services ingress-nginx-controller -o jsonpath='{.status.loadBalancer.ingress[0].ip}').nip.io
+REGISTRY_USER := admin
+REGISTRY_PASSWORD := Harbor12345
+endif
+
 # Explicit list of variables for envsubst (avoids clobbering $$i, $$namespace, etc. in YAML)
 ENVSUBST_VARS := '$${DOMAIN} $${CLUSTER_ISSUER} $${ADMIN_EMAIL} $${ADMIN_PASSWORD} \
 	$${ORG_NAME} $${MINIO_PASSWORD} $${HARBOR_PASSWORD} $${POSTGRES_PASSWORD} \
@@ -64,17 +76,19 @@ basic: generate-config core-dependencies lagoon-core lagoon-remote lagoon-config
 
 all: generate-config core-dependencies extras lagoon-core lagoon-remote lagoon-config
 
-core-dependencies: k3s system helm-repos metallb cert-manager gatekeeper ingress registry minio
+core-dependencies: k3s system helm-repos metallb cert-manager gatekeeper ingress _build_registry minio
+
+# Install whichever build registry was selected. Harbor takes the place of the twuni
+# registry — Lagoon's build pipeline points at $(REGISTRY_HOST), and the library project
+# Harbor auto-creates is public, so unauthenticated pulls still work.
+_build_registry:
+	@if [ "$(INSTALL_HARBOR)" = "true" ]; then $(MAKE) harbor; else $(MAKE) registry; fi
 
 extras:
-	@$(MAKE) _optional_harbor
 	@$(MAKE) _optional_prometheus
 	@$(MAKE) _optional_postgres
 	@$(MAKE) _optional_mariadb
 	@$(MAKE) _optional_headlamp
-
-_optional_harbor:
-	@if [ "$(INSTALL_HARBOR)" = "true" ]; then $(MAKE) harbor; fi
 
 _optional_prometheus:
 	@if [ "$(INSTALL_PROMETHEUS)" = "true" ]; then $(MAKE) prometheus; fi
@@ -397,7 +411,7 @@ lagoon-core:
 		--wait \
 		--timeout 10m \
 		-f build/values/lagoon-core.yml \
-		--set buildDeployImage.default.image="registry.$$($(KUBECTL) -n ingress-nginx get services ingress-nginx-controller -o jsonpath='{.status.loadBalancer.ingress[0].ip}').nip.io/library/build-deploy-image:edge" \
+		--set buildDeployImage.default.image="$(REGISTRY_HOST)/library/build-deploy-image:edge" \
 		--set elasticsearchURL="not-real-but-necessary.example.com" \
 		--set kibanaURL="not-real-but-necessary.example.com" \
 		--set keycloak.serviceMonitor.enabled=false \
@@ -428,10 +442,10 @@ lagoon-remote:
 		--namespace lagoon \
 		--wait \
 		-f build/values/lagoon-remote.yml \
-		--set "dockerHost.registry=registry.$$($(KUBECTL) -n ingress-nginx get services ingress-nginx-controller -o jsonpath='{.status.loadBalancer.ingress[0].ip}').nip.io" \
+		--set "dockerHost.registry=$(REGISTRY_HOST)" \
 		--set "global.rabbitMQPassword=$$($(KUBECTL) -n lagoon-core get secret lagoon-core-broker -o json | jq -r '.data.RABBITMQ_PASSWORD | @base64d')" \
 		--set "lagoon-build-deploy.rabbitMQPassword=$$($(KUBECTL) -n lagoon-core get secret lagoon-core-broker -o json | jq -r '.data.RABBITMQ_PASSWORD | @base64d')" \
-		--set "lagoon-build-deploy.unauthenticatedRegistry=registry.$$($(KUBECTL) -n ingress-nginx get services ingress-nginx-controller -o jsonpath='{.status.loadBalancer.ingress[0].ip}').nip.io" \
+		--set "lagoon-build-deploy.unauthenticatedRegistry=$(REGISTRY_HOST)" \
 		--set-file sshPortal.hostKeys.ed25519=generated/ssh-host-keys/ssh_portal_ed25519_key \
 		lagoon-remote \
 		lagoon/lagoon-remote
@@ -630,8 +644,9 @@ build-deploy-tool:
 
 push-local-build-image:
 	@export KUBECONFIG="$$KUBECONFIG" && \
-		export IMAGE_REGISTRY="registry.$$($(KUBECTL) -n ingress-nginx get services ingress-nginx-controller -o jsonpath='{.status.loadBalancer.ingress[0].ip}').nip.io/library" \
-		&& docker login -u admin -p Harbor12345 $$IMAGE_REGISTRY \
+		export REGISTRY_HOST="$(REGISTRY_HOST)" && \
+		export IMAGE_REGISTRY="$$REGISTRY_HOST/library" \
+		&& docker login -u "$(REGISTRY_USER)" -p "$(REGISTRY_PASSWORD)" "$$REGISTRY_HOST" \
 		&& docker tag lagoon/build-deploy-image:local $$IMAGE_REGISTRY/build-deploy-image:edge \
 		&& docker push $$IMAGE_REGISTRY/build-deploy-image:edge
 
