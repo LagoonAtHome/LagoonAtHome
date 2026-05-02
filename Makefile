@@ -692,8 +692,8 @@ post-install:
 	fi
 
 build-deploy-tool:
-	export BDT_DIR=$$(mktemp -d ./tmp/bdt.XXX) \
-		&& ln -sfn "$$BDT_DIR" ./tmp/bdt \
+	export BDT_DIR=$$(mktemp -d /tmp/bdt.XXX) \
+		&& ln -sfn "$$BDT_DIR" /tmp/bdt \
 		&& git clone https://github.com/LagoonAtHome/build-deploy-tool.git "$$BDT_DIR" \
 		&& cd "$$BDT_DIR" \
 		&& make docker-build
@@ -708,13 +708,13 @@ push-local-build-image:
 
 # --- Cleanup ---
 clean-bdt:
-	@for dir in ./build/bdt.* ; do \
+	@for dir in /tmp/bdt.* ; do \
 		if [ -d $$dir ]; then \
 			echo "removing directory $$dir" ; \
 			rm -rf $$dir ; \
 		fi ; \
 	done
-	rm -f ./build/bdt
+	rm -f /tmp/bdt
 
 clean-ssh:
 	ssh-keygen -R [$$($(KUBECTL) get svc -n lagoon-core lagoon-core-ssh -o jsonpath='{.status.loadBalancer.ingress[0].ip}')]:2020
