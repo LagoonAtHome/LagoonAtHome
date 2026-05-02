@@ -243,23 +243,24 @@ cert-manager:
 		-f build/values/cert-manager.yml \
 		cert-manager \
 		jetstack/cert-manager
-	# Generate self-signed CA if using self-signed mode
-	@if [ "$(TLS_MODE)" = "selfsigned" ]; then \
-		mkdir -p certs; \
-		if ! openssl x509 -enddate -noout -in certs/rootCA.pem > /dev/null 2>&1; then \
-			echo "Generating self-signed root CA"; \
-			openssl genrsa -out certs/rootCA-key.pem 2048; \
-			openssl req -x509 -new -nodes -key certs/rootCA-key.pem \
-				-sha256 -days 3560 -out certs/rootCA.pem \
-				-addext keyUsage=critical,digitalSignature,keyEncipherment,keyCertSign \
-				-subj '/CN=lagoon.test'; \
-		fi; \
-		kubectl -n cert-manager create secret generic lagoon-secret \
-			--from-file=tls.crt=certs/rootCA.pem \
-			--from-file=tls.key=certs/rootCA-key.pem \
-			--from-file=ca.crt=certs/rootCA.pem \
-			--dry-run=client -o yaml | kubectl apply -f -; \
+	# Generate the self-signed root CA. Required in every TLS mode — even when user-facing
+	# ingress uses Let's Encrypt, lagoon-issuer (a CA-type ClusterIssuer backed by lagoon-secret)
+	# signs internal mTLS certs for NATS leaf nodes, the RabbitMQ broker, the unauthenticated
+	# registry, and lagoon-remote. Without it, those Certificates never issue.
+	@mkdir -p certs
+	@if ! openssl x509 -enddate -noout -in certs/rootCA.pem > /dev/null 2>&1; then \
+		echo "Generating self-signed root CA"; \
+		openssl genrsa -out certs/rootCA-key.pem 2048; \
+		openssl req -x509 -new -nodes -key certs/rootCA-key.pem \
+			-sha256 -days 3560 -out certs/rootCA.pem \
+			-addext keyUsage=critical,digitalSignature,keyEncipherment,keyCertSign \
+			-subj '/CN=lagoon.test'; \
 	fi
+	@kubectl -n cert-manager create secret generic lagoon-secret \
+		--from-file=tls.crt=certs/rootCA.pem \
+		--from-file=tls.key=certs/rootCA-key.pem \
+		--from-file=ca.crt=certs/rootCA.pem \
+		--dry-run=client -o yaml | kubectl apply -f -
 	# Apply cluster issuers based on TLS mode
 	kubectl apply -f build/config/lagoon-issuer-selfsigned.yml
 	@if [ "$(TLS_MODE)" = "letsencrypt" ] || [ "$(TLS_MODE)" = "cloudflare" ]; then \
@@ -281,14 +282,7 @@ cert-manager:
 		--set secretTargets.authorizedSecretsAll=true \
 		trust-manager \
 		jetstack/trust-manager
-	# Pick a bundle whose Secret sources actually exist for the chosen TLS mode —
-	# trust-manager won't sync the Bundle (and the ConfigMap won't appear) if any source is missing,
-	# which then breaks every pod the Gatekeeper trust-ca-volume mutation touches.
-	@if [ "$(TLS_MODE)" = "selfsigned" ]; then \
-		kubectl apply -f config/ca-bundle-selfsigned.yml; \
-	else \
-		kubectl apply -f config/ca-bundle-public.yml; \
-	fi
+	kubectl apply -f config/ca-bundle.yml
 
 gatekeeper:
 	@echo "Installing Gatekeeper"
