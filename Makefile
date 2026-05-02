@@ -267,7 +267,14 @@ cert-manager:
 		--set secretTargets.authorizedSecretsAll=true \
 		trust-manager \
 		jetstack/trust-manager
-	kubectl apply -f config/ca-bundle.yml
+	# Pick a bundle whose Secret sources actually exist for the chosen TLS mode —
+	# trust-manager won't sync the Bundle (and the ConfigMap won't appear) if any source is missing,
+	# which then breaks every pod the Gatekeeper trust-ca-volume mutation touches.
+	@if [ "$(TLS_MODE)" = "selfsigned" ]; then \
+		kubectl apply -f config/ca-bundle-selfsigned.yml; \
+	else \
+		kubectl apply -f config/ca-bundle-public.yml; \
+	fi
 
 gatekeeper:
 	@echo "Installing Gatekeeper"
