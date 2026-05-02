@@ -1,11 +1,11 @@
 config:
-  baseURL: "headlamp.lagoon.jwrf.au"
+  baseURL: "headlamp.${DOMAIN}"
 
 ingress:
   enabled: true
   ingressClassName: nginx
   hosts:
-    - host: headlamp.lagoon.jwrf.au
+    - host: headlamp.${DOMAIN}
       paths:
       - path: /
         type: ImplementationSpecific
