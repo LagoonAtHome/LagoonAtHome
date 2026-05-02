@@ -531,10 +531,9 @@ post-install:
 	@ATTEMPTS=0; MAX_ATTEMPTS=60; \
 	while [ $$ATTEMPTS -lt $$MAX_ATTEMPTS ]; do \
 		STATUS=$$(curl -s -k -o /dev/null -w '%{http_code}' https://keycloak.$(DOMAIN)/auth/ 2>/dev/null || echo "000"); \
-		if [ "$$STATUS" = "200" ] || [ "$$STATUS" = "303" ]; then \
-			echo "Keycloak is ready (HTTP $$STATUS)"; \
-			break; \
-		fi; \
+		case "$$STATUS" in \
+			200|301|302|303|307|308) echo "Keycloak is ready (HTTP $$STATUS)"; break ;; \
+		esac; \
 		ATTEMPTS=$$((ATTEMPTS + 1)); \
 		echo "  Attempt $$ATTEMPTS/$$MAX_ATTEMPTS — Keycloak returned HTTP $$STATUS, retrying in 10s..."; \
 		sleep 10; \
