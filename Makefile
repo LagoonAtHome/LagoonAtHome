@@ -68,7 +68,7 @@ endif
 	k3s system helm-repos helm metallb cert-manager gatekeeper ingress \
 	harbor registry minio postgres mariadb prometheus headlamp \
 	lagoon-core lagoon-remote lagoon-config post-install \
-	build-deploy-tool push-local-build-image \
+	build-deploy-tool push-local-build-image apply-extras \
 	clean-bdt clean-ssh nuke
 
 # --- High-level targets ---
@@ -136,6 +136,29 @@ generate-config:
 		echo "Generating SSH portal host keys"; \
 		ssh-keygen -t ed25519 -f generated/ssh-host-keys/ssh_portal_ed25519_key -N "" -q; \
 	fi
+
+# Apply user-supplied resources from extras/. Files ending in .yml/.yaml are applied
+# verbatim; files ending in .yml.tpl/.yaml.tpl are run through envsubst with the same
+# variables available to config/ and values/ templates (so $${DOMAIN}, $${CLUSTER_ISSUER},
+# etc. resolve from .env). .example files are ignored.
+apply-extras:
+	@mkdir -p build/extras
+	@found=0; \
+	for tpl in extras/*.yml.tpl extras/*.yaml.tpl; do \
+		[ -f "$$tpl" ] || continue; \
+		out="build/extras/$$(basename "$${tpl%.tpl}")"; \
+		envsubst $(ENVSUBST_VARS) < "$$tpl" > "$$out"; \
+		echo "Applying $$tpl (templated)"; \
+		kubectl apply -f "$$out"; \
+		found=1; \
+	done; \
+	for f in extras/*.yml extras/*.yaml; do \
+		[ -f "$$f" ] || continue; \
+		echo "Applying $$f"; \
+		kubectl apply -f "$$f"; \
+		found=1; \
+	done; \
+	if [ $$found -eq 0 ]; then echo "No user resources in extras/ — skipping"; fi
 
 # --- Core system setup ---
 k3s:

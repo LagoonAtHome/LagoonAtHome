@@ -5,3 +5,8 @@ build/*
 certs/
 generated/
 
+# User-supplied resources applied by `make apply-extras` — keep examples in repo, ignore real ones
+extras/*
+!extras/.gitkeep
+!extras/*.example
+

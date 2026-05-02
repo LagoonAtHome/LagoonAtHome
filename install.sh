@@ -538,6 +538,16 @@ run_installation() {
         run_step "headlamp"
     fi
 
+    # Apply any user-supplied resources from extras/ (additional ingresses,
+    # services, etc. that share the cluster with Lagoon).
+    if compgen -G "extras/*.yml" >/dev/null \
+        || compgen -G "extras/*.yaml" >/dev/null \
+        || compgen -G "extras/*.yml.tpl" >/dev/null \
+        || compgen -G "extras/*.yaml.tpl" >/dev/null; then
+        step "Applying user resources from extras/"
+        run_step "apply-extras"
+    fi
+
     local end_time elapsed_min
     end_time=$(date +%s)
     elapsed_min=$(( (end_time - start_time) / 60 ))
