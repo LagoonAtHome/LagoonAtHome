@@ -602,6 +602,8 @@ post-install:
 	fi; \
 	echo "Configuring Lagoon CLI"; \
 	SSH_HOST=$$(kubectl get svc -n lagoon-core lagoon-core-ssh -o jsonpath='{.status.loadBalancer.ingress[0].ip}'); \
+	SSH_KEY_RESOLVED="$(SSH_KEY_PATH)"; \
+	SSH_KEY_RESOLVED="$${SSH_KEY_RESOLVED/#\~/$$HOME}"; \
 	lagoon config add \
 		--force \
 		--graphql http://api.$(DOMAIN)/graphql \
@@ -609,7 +611,7 @@ post-install:
 		--hostname $$SSH_HOST \
 		--lagoon $(ORG_NAME) \
 		--port 2020 \
-		--ssh-key "$(SSH_KEY_PATH)"; \
+		--ssh-key "$$SSH_KEY_RESOLVED"; \
 	lagoon config default --lagoon $(ORG_NAME); \
 	lagoon login; \
 	echo "Configuring organization and deploy targets"; \

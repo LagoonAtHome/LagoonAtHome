@@ -336,6 +336,10 @@ main() {
         default_ssh_key="${HOME}/.ssh/id_rsa"
     fi
     prompt SSH_KEY_PATH "SSH key path (private key)" "$default_ssh_key"
+    # Expand a leading ~ so .env always holds an absolute path — lagoon CLI doesn't expand ~ itself.
+    case "$SSH_KEY_PATH" in
+        "~"|"~/"*) SSH_KEY_PATH="${HOME}${SSH_KEY_PATH#~}" ;;
+    esac
 
     if [ ! -f "${SSH_KEY_PATH}.pub" ]; then
         warn "Public key not found at ${SSH_KEY_PATH}.pub"
